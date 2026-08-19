@@ -47,6 +47,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# local agent scratch (tickets / specs)
+.scratch/
+
 # Next.js auto-generated agent instructions (local only)
 AGENTS.md
 CLAUDE.md
