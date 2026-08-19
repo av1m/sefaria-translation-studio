@@ -3,7 +3,7 @@ import { generateDraft } from "@/lib/draft-engine";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { ref, source, contextPack, llmConfig } = body;
+    const { ref, source, original, contextPack, llmConfig, targetLanguage } = body;
 
     if (!ref || !source) {
       return Response.json(
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
 
     const config = {
       provider: llmConfig?.provider || process.env.LLM_PROVIDER || "openai",
-      model: llmConfig?.model || process.env.LLM_MODEL || "gpt-4o",
+      model: llmConfig?.model || process.env.LLM_MODEL || "gpt-5.6-terra",
       apiKey: llmConfig?.apiKey || process.env.LLM_API_KEY || "",
     };
 
@@ -28,7 +28,9 @@ export async function POST(request: Request) {
     const result = await generateDraft({
       ref,
       source,
+      original,
       contextPack: contextPack ?? {},
+      targetLanguage: targetLanguage ?? "fr",
       llmConfig: config,
     });
 

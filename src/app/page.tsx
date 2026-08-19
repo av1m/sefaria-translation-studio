@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { parseRef, type ParsedRef } from "@/lib/parse-ref";
 import type { SefariaVersion } from "@/lib/sefaria-client";
+import { leafRef, type IndexOutline } from "@/lib/index-outline";
 
 interface LoadedRef {
   parsed: ParsedRef;
@@ -21,14 +22,52 @@ interface HelperLangToggle {
   versions: SefariaVersion[];
 }
 
+interface ChapterItemState {
+  ref: string;
+  primary: SefariaVersion;
+  helper: SefariaVersion | null;
+  comments: string[];
+  helperComments: string[];
+  hasTargetTranslation: boolean;
+  drafts: string[] | null;
+  status: "idle" | "translating" | "translated" | "saving" | "saved" | "error";
+  error?: string;
+}
+
 const MODEL_OPTIONS: Record<string, string[]> = {
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+  openai: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
   anthropic: ["claude-sonnet-4-20250514", "claude-3-5-haiku-20241022"],
 };
 
 function isSourceLang(lang: string) {
   return ["he", "arc", "yi"].includes(lang);
 }
+
+type TargetLanguage = "fr" | "es" | "de" | "it" | "pt";
+
+const TARGET_LANGUAGES: { actualLanguage: TargetLanguage; label: string }[] = [
+  { actualLanguage: "fr", label: "French" },
+  { actualLanguage: "es", label: "Spanish" },
+  { actualLanguage: "de", label: "German" },
+  { actualLanguage: "it", label: "Italian" },
+  { actualLanguage: "pt", label: "Portuguese" },
+];
+
+const TARGET_LANGUAGE_FAMILIES: Record<TargetLanguage, string> = {
+  fr: "french",
+  es: "spanish",
+  de: "german",
+  it: "italian",
+  pt: "portuguese",
+};
+
+const TARGET_LANGUAGE_NAMES: Record<TargetLanguage, string> = {
+  fr: "French",
+  es: "Spanish",
+  de: "German",
+  it: "Italian",
+  pt: "Portuguese",
+};
 
 function getComments(v: SefariaVersion): string[] {
   return Array.isArray(v.text) ? v.text : [v.text];
@@ -42,6 +81,73 @@ function hasContent(text: string | string[]): boolean {
 function Spinner() {
   return (
     <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+  );
+}
+
+function TextPanel({
+  title,
+  segments,
+  dir = "ltr",
+  font = "font-sans",
+  editable = false,
+  onChange,
+  badge,
+}: {
+  title: string;
+  segments: string[];
+  dir?: "ltr" | "rtl";
+  font?: string;
+  editable?: boolean;
+  onChange?: (index: number, value: string) => void;
+  badge?: React.ReactNode;
+}) {
+  const [raw, setRaw] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white">
+      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2">
+        <h3 className="text-sm font-medium text-zinc-500">
+          {title} {badge}
+        </h3>
+        <button
+          onClick={() => setRaw((v) => !v)}
+          className="text-xs text-zinc-400 hover:text-zinc-600"
+        >
+          {raw ? "HTML" : "Raw"}
+        </button>
+      </div>
+      <div dir={dir} className={`p-4 space-y-3 ${font} text-base leading-relaxed text-zinc-900`}>
+        {segments.map((s, i) => {
+          if (raw) {
+            return editable ? (
+              <textarea
+                key={i}
+                value={s}
+                onChange={(e) => onChange?.(i, e.target.value)}
+                rows={Math.max(3, s.split("\n").length + 1)}
+                className="w-full rounded border border-zinc-200 bg-zinc-50 p-3 text-zinc-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y"
+              />
+            ) : (
+              <pre
+                key={i}
+                className="rounded bg-zinc-50 p-3 whitespace-pre-wrap text-xs font-mono break-all"
+              >
+                {s}
+              </pre>
+            );
+          }
+
+          // Default: HTML rendered view (including for editable drafts).
+          return (
+            <div
+              key={i}
+              className="rounded bg-zinc-50 p-3"
+              dangerouslySetInnerHTML={{ __html: s }}
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -78,7 +184,7 @@ function Toggle({
 function useLlmConfig() {
   const [llm, setLlm] = useState({
     provider: "openai",
-    model: "gpt-4o",
+    model: "gpt-5.6-terra",
     apiKey: "",
   });
   useEffect(() => {
@@ -112,6 +218,7 @@ export default function Home() {
 
   const [showSettings, setShowSettings] = useState(false);
   const { llm, updateLlm } = useLlmConfig();
+  const [targetLanguage, setTargetLanguage] = useState<TargetLanguage>("fr");
 
   const [prevSegToggle, setPrevSegToggle] = useState(true);
   const [glossaryToggle, setGlossaryToggle] = useState(true);
@@ -125,6 +232,8 @@ export default function Home() {
   const [newTermFrench, setNewTermFrench] = useState("");
 
   const prevSegmentsCache = useRef<Record<string, string[]>>({});
+  const debugSefariaRaw = useRef<any>(null);
+  const debugLlmExchange = useRef<{ prompt: any; response: any } | null>(null);
   const [prevSegments, setPrevSegments] = useState<string[] | null>(null);
 
   const [settingsChanged, setSettingsChanged] = useState(false);
@@ -132,6 +241,32 @@ export default function Home() {
 
   const [searchingGap, setSearchingGap] = useState(false);
   const [gapMessage, setGapMessage] = useState<string | null>(null);
+  const [debugExportMessage, setDebugExportMessage] = useState<
+    | null
+    | {
+        kind: "success" | "error";
+        text: string;
+      }
+  >(null);
+
+  const [mode, setMode] = useState<"single" | "chapter" | "book">("single");
+  const [chapterInput, setChapterInput] = useState("");
+  const [chapterLoading, setChapterLoading] = useState(false);
+  const [chapterError, setChapterError] = useState<string | null>(null);
+  const [chapterIndexTitle, setChapterIndexTitle] = useState("");
+  const [chapterItems, setChapterItems] = useState<ChapterItemState[]>([]);
+  const [batchTranslating, setBatchTranslating] = useState(false);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+
+  const [bookInput, setBookInput] = useState("");
+  const [bookLoading, setBookLoading] = useState(false);
+  const [bookError, setBookError] = useState<string | null>(null);
+  const [outline, setOutline] = useState<IndexOutline | null>(null);
+  const [expandedRefs, setExpandedRefs] = useState<Set<string>>(new Set());
+  const [fetchedChildCounts, setFetchedChildCounts] = useState<
+    Record<string, number>
+  >({});
 
   useEffect(() => {
     fetch("/api/glossary")
@@ -139,6 +274,10 @@ export default function Home() {
       .then(setGlossary)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (targetLanguage !== "fr") setGlossaryToggle(false);
+  }, [targetLanguage]);
 
   const markSettingsChanged = () => {
     if (drafts) setSettingsChanged(true);
@@ -151,7 +290,7 @@ export default function Home() {
     setDrafts(null);
     setSaved(false);
     setPrevSegToggle(true);
-    setGlossaryToggle(true);
+    setGlossaryToggle(targetLanguage === "fr");
     setNotesToggle(true);
     setHelperLangs([]);
     setNotes("");
@@ -166,7 +305,7 @@ export default function Home() {
       return;
     }
     try {
-      const endpoint = `v3/texts/${encodeURIComponent(prevRef)}?version=all`;
+      const endpoint = `v3/texts/${encodeURIComponent(prevRef)}?version=hebrew|all`;
       const res = await fetch(
         `/api/sefaria?endpoint=${encodeURIComponent(endpoint)}`,
       );
@@ -189,24 +328,26 @@ export default function Home() {
     } catch {}
   }, []);
 
-  const handleLoad = useCallback(async () => {
+  const handleLoad = useCallback(async (override?: string) => {
     reset();
-    const trimmed = input.trim();
+    const trimmed = (override ?? input).trim();
     if (!trimmed) return;
 
     setLoading(true);
     try {
       const parsed = parseRef(trimmed);
-      const encodedRef = encodeURIComponent(parsed.ref);
-      const endpoint = `v3/texts/${encodedRef}?version=all`;
+      const translationFamily = TARGET_LANGUAGE_FAMILIES[targetLanguage];
+      const targetLanguageName = TARGET_LANGUAGE_NAMES[targetLanguage];
+      const endpoint = `v3/texts/${encodeURIComponent(parsed.ref)}?version=english|all&version=hebrew|all&version=${translationFamily}|all`;
       const res = await fetch(
         `/api/sefaria?endpoint=${encodeURIComponent(endpoint)}`,
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Erreur Sefaria (${res.status})`);
+        throw new Error(body.error || `Sefaria error (${res.status})`);
       }
       const data = await res.json();
+      debugSefariaRaw.current = data;
 
       const versions: SefariaVersion[] = (data.versions ?? []).map(
         (v: any) => ({
@@ -220,12 +361,12 @@ export default function Home() {
         }),
       );
 
-      const hasFrench = versions.some(
-        (v) => v.actualLanguage === "fr" && hasContent(v.text),
+      const hasTargetTranslation = versions.some(
+        (v) => v.actualLanguage === targetLanguage && hasContent(v.text),
       );
-      if (hasFrench) {
+      if (hasTargetTranslation) {
         setRefusal(
-          "Ce Ref a déjà une traduction française sur Sefaria. Collez un autre lien.",
+          `This Ref already has a ${targetLanguageName} translation on Sefaria. Paste another link.`,
         );
         setInput("");
         setLoading(false);
@@ -238,7 +379,7 @@ export default function Home() {
 
       if (!primary) {
         throw new Error(
-          "Aucune version source (hébreu/araméen/yiddish) trouvée pour ce Ref.",
+          "No source version (Hebrew/Aramaic/Yiddish) found for this Ref.",
         );
       }
 
@@ -251,7 +392,7 @@ export default function Home() {
       for (const v of versions) {
         if (
           isSourceLang(v.actualLanguage) ||
-          v.actualLanguage === "fr" ||
+          v.actualLanguage === targetLanguage ||
           !hasContent(v.text)
         )
           continue;
@@ -289,7 +430,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [input, fetchPrevSegments]);
+  }, [input, fetchPrevSegments, targetLanguage]);
 
   const handleSelectPrimary = (v: SefariaVersion) => {
     if (!loaded) return;
@@ -319,7 +460,7 @@ export default function Home() {
         }));
       }
 
-      if (glossaryToggle) {
+      if (glossaryToggle && targetLanguage === "fr") {
         const srcText = comments.join(" ");
         const matched = Object.entries(glossary)
           .filter(([term]) => srcText.includes(term))
@@ -333,21 +474,32 @@ export default function Home() {
         contextPack.notes = notes.trim();
       }
 
+      const englishHelper = helperLangs.find((h) => h.lang === "en" && h.enabled);
+      const useEnglishAsSource = !!englishHelper;
+      const englishText = useEnglishAsSource
+        ? getComments(englishHelper.versions[0])
+        : undefined;
+
+      const draftPayload = {
+        ref: loaded.parsed.ref,
+        source: useEnglishAsSource ? englishText : comments,
+        original: useEnglishAsSource ? comments : undefined,
+        contextPack,
+        targetLanguage,
+        llmConfig: llm.apiKey ? llm : undefined,
+      };
       const res = await fetch("/api/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ref: loaded.parsed.ref,
-          source: comments,
-          contextPack,
-          llmConfig: llm.apiKey ? llm : undefined,
-        }),
+        body: JSON.stringify(draftPayload),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Erreur de traduction");
+        throw new Error(body.error || "Translation error");
       }
-      const { drafts: d } = await res.json();
+      const draftResponse = await res.json();
+      debugLlmExchange.current = { prompt: { ...draftPayload, llmConfig: { ...draftPayload.llmConfig, apiKey: "***" } }, response: draftResponse };
+      const { drafts: d } = draftResponse;
       setDrafts(d);
     } catch (err: any) {
       setError(err.message);
@@ -367,11 +519,12 @@ export default function Home() {
           indexTitle: loaded.parsed.indexTitle,
           ref: loaded.parsed.ref,
           drafts,
+          actualLanguage: targetLanguage,
         }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Erreur d'enregistrement");
+        throw new Error(body.error || "Save error");
       }
       setSaved(true);
     } catch (err: any) {
@@ -418,12 +571,12 @@ export default function Home() {
 
   const fetchRefData = async (ref: string) => {
     const parsed = parseRef(ref);
-    const encodedRef = encodeURIComponent(parsed.ref);
-    const endpoint = `v3/texts/${encodedRef}?version=all`;
+    const translationFamily = TARGET_LANGUAGE_FAMILIES[targetLanguage];
+    const endpoint = `v3/texts/${encodeURIComponent(parsed.ref)}?version=english|all&version=hebrew|all&version=${translationFamily}|all`;
     const res = await fetch(`/api/sefaria?endpoint=${encodeURIComponent(endpoint)}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Erreur Sefaria (${res.status})`);
+      throw new Error(body.error || `Sefaria error (${res.status})`);
     }
     const data = await res.json();
     const versions: SefariaVersion[] = (data.versions ?? []).map((v: any) => ({
@@ -435,13 +588,22 @@ export default function Home() {
       license: v.license,
       text: v.text ?? "",
     }));
-    const hasFrench = versions.some(
-      (v) => v.actualLanguage === "fr" && hasContent(v.text),
+    const hasTargetTranslation = versions.some(
+      (v) => v.actualLanguage === targetLanguage && hasContent(v.text),
     );
     const primaries = versions.filter((v) => isSourceLang(v.actualLanguage));
     const primary = primaries.find((v) => v.isPrimary || v.isSource) ?? primaries[0];
     const helper = versions.find((v) => v.actualLanguage === "en" && hasContent(v.text)) ?? null;
-    return { parsed: { ...parsed, ref: data.ref ?? parsed.ref }, versions, primary, helper, allPrimaries: primaries, next: data.next as string | undefined, hasFrench };
+    return {
+      parsed: { ...parsed, ref: data.ref ?? parsed.ref },
+      versions,
+      primary,
+      helper,
+      allPrimaries: primaries,
+      next: data.next as string | undefined,
+      hasTargetTranslation,
+      sectionRef: data.sectionRef as string | undefined,
+    };
   };
 
   const handleNextGap = async () => {
@@ -452,7 +614,7 @@ export default function Home() {
       let nextRef = loaded.next;
       while (nextRef) {
         const result = await fetchRefData(nextRef);
-        if (!result.hasFrench && result.primary) {
+        if (!result.hasTargetTranslation && result.primary) {
           setInput(nextRef);
           setLoaded({
             parsed: result.parsed,
@@ -469,7 +631,9 @@ export default function Home() {
         }
         nextRef = result.next;
       }
-      setGapMessage("Tous les Segments de cet Index ont déjà une traduction française !");
+      setGapMessage(
+        `All Segments in this Index already have a ${TARGET_LANGUAGE_NAMES[targetLanguage]} translation!`,
+      );
       setSaved(false);
     } catch (err: any) {
       setError(err.message);
@@ -478,37 +642,376 @@ export default function Home() {
     }
   };
 
-  const handleDownloadCSV = () => {
-    if (!loaded) return;
-    const url = `/api/version-file?indexTitle=${encodeURIComponent(loaded.parsed.indexTitle)}&format=csv`;
+  const downloadCSV = (indexTitle: string) => {
+    const url = `/api/version-file?indexTitle=${encodeURIComponent(indexTitle)}&actualLanguage=${targetLanguage}&format=csv`;
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${loaded.parsed.indexTitle} [fr].csv`;
+    a.download = `${indexTitle} [${targetLanguage}].csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
   };
 
+  const handleDownloadCSV = () => {
+    if (!loaded) return;
+    downloadCSV(loaded.parsed.indexTitle);
+  };
+
+  const loadChapterByRef = async (raw: string) => {
+    setChapterError(null);
+    setChapterItems([]);
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    setChapterLoading(true);
+    try {
+      const parsed = parseRef(trimmed);
+      let result = await fetchRefData(parsed.ref);
+      const sectionRef = result.sectionRef || result.parsed.ref;
+      const primaryTextIsArray = Array.isArray(result.primary?.text);
+
+      // Segment `next` is the next *section*, not the next verse/line.
+      // Always expand from the section payload's text[].
+      if (!primaryTextIsArray && sectionRef !== result.parsed.ref) {
+        result = await fetchRefData(sectionRef);
+      }
+
+      if (!result.primary) {
+        setChapterError("No source Segment found for this Ref.");
+        setChapterIndexTitle(parsed.indexTitle);
+        return;
+      }
+
+      const sourceTexts = getComments(result.primary);
+      const helperTexts = result.helper ? getComments(result.helper) : [];
+      const targetVersion = result.versions.find(
+        (v) => v.actualLanguage === targetLanguage && hasContent(v.text),
+      );
+      const targetTexts = targetVersion ? getComments(targetVersion) : [];
+
+      const items: ChapterItemState[] = [];
+      sourceTexts.forEach((comment, i) => {
+        if (!comment) return;
+        const helperComment = helperTexts[i] ?? "";
+        items.push({
+          ref: leafRef(sectionRef, i + 1),
+          primary: { ...result.primary!, text: comment },
+          helper: result.helper
+            ? { ...result.helper, text: helperComment }
+            : null,
+          comments: [comment],
+          helperComments: helperComment ? [helperComment] : [],
+          hasTargetTranslation: !!(targetTexts[i] && targetTexts[i].length > 0),
+          drafts: null,
+          status: "idle",
+        });
+      });
+
+      if (items.length === 0) {
+        setChapterError("No source Segment found for this Ref.");
+      }
+      setChapterItems(items);
+      setChapterIndexTitle(parsed.indexTitle);
+    } catch (err: any) {
+      setChapterError(err.message);
+    } finally {
+      setChapterLoading(false);
+    }
+  };
+
+  const handleLoadChapter = async () => {
+    await loadChapterByRef(chapterInput);
+  };
+
+  const handleLoadBook = async () => {
+    setBookError(null);
+    setOutline(null);
+    setExpandedRefs(new Set());
+    setFetchedChildCounts({});
+    const trimmed = bookInput.trim();
+    if (!trimmed) return;
+    setBookLoading(true);
+    try {
+      const parsed = parseRef(trimmed);
+      const res = await fetch(
+        `/api/outline?indexTitle=${encodeURIComponent(parsed.indexTitle)}`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Outline error (${res.status})`);
+      }
+      const data = (await res.json()) as IndexOutline;
+      if (!data.nodes?.length) {
+        setBookError("No sections found for this book.");
+      }
+      setOutline(data);
+    } catch (err: any) {
+      setBookError(err.message);
+    } finally {
+      setBookLoading(false);
+    }
+  };
+
+  const childCountFor = (node: { ref: string; childCount?: number }) =>
+    node.childCount ?? fetchedChildCounts[node.ref];
+
+  const toggleExpandNode = async (node: {
+    ref: string;
+    childCount?: number;
+  }) => {
+    setExpandedRefs((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.ref)) next.delete(node.ref);
+      else next.add(node.ref);
+      return next;
+    });
+    if (childCountFor(node) != null) return;
+    try {
+      const translationFamily = TARGET_LANGUAGE_FAMILIES[targetLanguage];
+      const endpoint = `v3/texts/${encodeURIComponent(node.ref)}?version=hebrew|all&version=english|all&version=${translationFamily}|all`;
+      const res = await fetch(
+        `/api/sefaria?endpoint=${encodeURIComponent(endpoint)}`,
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const he =
+        (data.versions ?? []).find(
+          (v: any) =>
+            ["he", "arc", "yi"].includes(v.actualLanguage ?? "") &&
+            Array.isArray(v.text),
+        ) ?? (data.versions ?? []).find((v: any) => Array.isArray(v.text));
+      const count = Array.isArray(he?.text) ? he.text.length : 0;
+      if (count > 0) {
+        setFetchedChildCounts((prev) => ({ ...prev, [node.ref]: count }));
+      }
+    } catch {}
+  };
+
+  const translateSectionFromTree = async (sectionRef: string) => {
+    setChapterInput(sectionRef);
+    setMode("chapter");
+    await loadChapterByRef(sectionRef);
+  };
+
+  const translateLeafFromTree = async (ref: string) => {
+    setInput(ref);
+    setMode("single");
+    await handleLoad(ref);
+  };
+
+  const translateChapterItem = async (
+    item: ChapterItemState,
+    prevComments?: string[],
+  ): Promise<string[] | null> => {
+    setChapterItems((prev) =>
+      prev.map((it) =>
+        it.ref === item.ref ? { ...it, status: "translating", error: undefined } : it,
+      ),
+    );
+    try {
+      const useEnglishAsSource = !!item.helper && item.helperComments.length > 0;
+      const contextPack: any = {};
+
+      if (prevSegToggle && prevComments && prevComments.length > 0) {
+        contextPack.previousSegments = prevComments;
+      }
+
+      if (glossaryToggle && targetLanguage === "fr") {
+        const srcText = item.comments.join(" ");
+        const matched = Object.entries(glossary)
+          .filter(([term]) => srcText.includes(term))
+          .map(([source, french]) => ({ source, french }));
+        if (matched.length > 0) contextPack.glossary = matched;
+      }
+
+      if (notesToggle && notes.trim()) contextPack.notes = notes.trim();
+
+      const draftPayload = {
+        ref: item.ref,
+        source: useEnglishAsSource ? item.helperComments : item.comments,
+        original: useEnglishAsSource ? item.comments : undefined,
+        contextPack,
+        targetLanguage,
+        llmConfig: llm.apiKey ? llm : undefined,
+      };
+      const res = await fetch("/api/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draftPayload),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Translation error");
+      }
+      const { drafts } = await res.json();
+      setChapterItems((prev) =>
+        prev.map((it) => (it.ref === item.ref ? { ...it, drafts, status: "translated" } : it)),
+      );
+      return drafts as string[];
+    } catch (err: any) {
+      setChapterItems((prev) =>
+        prev.map((it) =>
+          it.ref === item.ref ? { ...it, status: "error", error: err.message } : it,
+        ),
+      );
+      return null;
+    }
+  };
+
+  const handleTranslateAllChapter = async () => {
+    setBatchTranslating(true);
+    const snapshot = chapterItems;
+    const pending = snapshot.filter(
+      (it) => !it.hasTargetTranslation && !it.drafts,
+    );
+    setBatchProgress({ done: 0, total: pending.length });
+    for (const item of pending) {
+      const idx = snapshot.indexOf(item);
+      const prev = idx > 0 ? snapshot[idx - 1].comments : undefined;
+      await translateChapterItem(item, prev);
+      setBatchProgress((p) => ({ ...p, done: p.done + 1 }));
+    }
+    setBatchTranslating(false);
+  };
+
+  const saveChapterItem = async (item: ChapterItemState) => {
+    if (!item.drafts) return;
+    setChapterItems((prev) =>
+      prev.map((it) => (it.ref === item.ref ? { ...it, status: "saving" } : it)),
+    );
+    try {
+      const res = await fetch("/api/version-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          indexTitle: chapterIndexTitle,
+          ref: item.ref,
+          drafts: item.drafts,
+          actualLanguage: targetLanguage,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Save error");
+      }
+      setChapterItems((prev) =>
+        prev.map((it) => (it.ref === item.ref ? { ...it, status: "saved" } : it)),
+      );
+    } catch (err: any) {
+      setChapterItems((prev) =>
+        prev.map((it) =>
+          it.ref === item.ref ? { ...it, status: "error", error: err.message } : it,
+        ),
+      );
+    }
+  };
+
+  const handleSaveAllChapter = async () => {
+    setBatchSaving(true);
+    const toSave = chapterItems.filter((it) => it.drafts && it.status !== "saved");
+    for (const item of toSave) {
+      await saveChapterItem(item);
+    }
+    setBatchSaving(false);
+  };
+
+  const updateChapterDraft = (ref: string, idx: number, value: string) => {
+    setChapterItems((prev) =>
+      prev.map((it) => {
+        if (it.ref !== ref || !it.drafts) return it;
+        const next = [...it.drafts];
+        next[idx] = value;
+        return { ...it, drafts: next, status: it.status === "saved" ? "translated" : it.status };
+      }),
+    );
+  };
+
   const sourceComments = loaded ? getComments(loaded.primary) : [];
   const sourceText = sourceComments.join(" ");
-  const matchingGlossary = Object.entries(glossary).filter(
-    ([term]) => sourceText && sourceText.includes(term),
-  );
+  const matchingGlossary =
+    targetLanguage === "fr" && glossaryToggle
+      ? Object.entries(glossary).filter(
+          ([term]) => sourceText && sourceText.includes(term),
+        )
+      : [];
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50">
       <header className="border-b border-zinc-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-zinc-900">
-            Studio de traduction Sefaria
+            Sefaria Translation Studio
           </h1>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
-          >
-            ⚙ Paramètres
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  const ctx = {
+                    input,
+                    ref: loaded?.parsed,
+                    llm: { ...llm, apiKey: llm.apiKey ? "***" : "" },
+                    versions: loaded?.versions,
+                    primary: loaded
+                      ? {
+                          versionTitle: loaded.primary.versionTitle,
+                          actualLanguage: loaded.primary.actualLanguage,
+                          text: loaded.primary.text,
+                        }
+                      : null,
+                    helperLangs: helperLangs.map((h) => ({
+                      lang: h.lang,
+                      enabled: h.enabled,
+                    })),
+                    toggles: { prevSegToggle, glossaryToggle, notesToggle },
+                    notes,
+                    glossary,
+                    prevSegments,
+                    drafts,
+                    error,
+                    refusal,
+                    _sefariaRaw: debugSefariaRaw.current,
+                    _llmExchange: debugLlmExchange.current,
+                  };
+
+                  await navigator.clipboard.writeText(
+                    JSON.stringify(ctx, null, 2),
+                  );
+
+                  setDebugExportMessage({
+                    kind: "success",
+                    text: "Debug payload copied to clipboard.",
+                  });
+                  window.setTimeout(() => setDebugExportMessage(null), 2500);
+                } catch {
+                  setDebugExportMessage({
+                    kind: "error",
+                    text: "Failed to copy debug payload to clipboard.",
+                  });
+                  window.setTimeout(() => setDebugExportMessage(null), 4000);
+                }
+              }}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+            >
+              Export debug
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+            >
+              ⚙ Settings
+            </button>
+          </div>
         </div>
+          {debugExportMessage && (
+            <div
+              className={`mt-3 rounded-lg border px-4 py-3 text-sm ${
+                debugExportMessage.kind === "success"
+                  ? "border-green-200 bg-green-50 text-green-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}
+            >
+              {debugExportMessage.text}
+            </div>
+          )}
         {showSettings && (
           <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-3">
             <div>
@@ -552,11 +1055,71 @@ export default function Home() {
                 className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm"
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-500 mb-1">
+                Translation target language
+              </label>
+              <select
+                value={targetLanguage}
+                onChange={(e) => {
+                  const next = e.target.value as TargetLanguage;
+                  setTargetLanguage(next);
+                  setDrafts(null);
+                  setSaved(false);
+                  setSettingsChanged(true);
+                  setGapMessage(null);
+                  setError(null);
+                }}
+                className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+              >
+                {TARGET_LANGUAGES.map((opt) => (
+                  <option key={opt.actualLanguage} value={opt.actualLanguage}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </header>
 
       <div className="mx-auto w-full max-w-7xl px-6 py-6">
+        {/* Mode tabs */}
+        <div className="mb-4 flex gap-1 rounded-lg border border-zinc-200 bg-white p-1 w-fit">
+          <button
+            onClick={() => setMode("single")}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+              mode === "single"
+                ? "bg-blue-600 text-white"
+                : "text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            Segment
+          </button>
+          <button
+            onClick={() => setMode("chapter")}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+              mode === "chapter"
+                ? "bg-blue-600 text-white"
+                : "text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            Chapter
+          </button>
+          <button
+            onClick={() => setMode("book")}
+            className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+              mode === "book"
+                ? "bg-blue-600 text-white"
+                : "text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            Book
+          </button>
+        </div>
+
+        {mode === "single" && (
+        <>
         {/* Input bar */}
         <div className="flex gap-3">
           <input
@@ -564,15 +1127,15 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleLoad()}
-            placeholder="URL Sefaria ou Ref (ex: Rashi on Genesis 1:1)"
+            placeholder="Sefaria URL or Ref (e.g. Rashi on Genesis 1:1)"
             className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
           <button
-            onClick={handleLoad}
+            onClick={() => handleLoad()}
             disabled={loading || !input.trim()}
             className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? <Spinner /> : "Charger"}
+            {loading ? <Spinner /> : "Load"}
           </button>
         </div>
 
@@ -583,7 +1146,7 @@ export default function Home() {
               onClick={() => setError(null)}
               className="ml-3 font-medium underline"
             >
-              Fermer
+              Close
             </button>
           </div>
         )}
@@ -603,7 +1166,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 {settingsChanged && (
                   <span className="text-xs text-amber-600 font-medium">
-                    ● Contexte modifié
+                    ● Context changed
                   </span>
                 )}
                 <button
@@ -613,10 +1176,10 @@ export default function Home() {
                 >
                   {drafting ? (
                     <span className="flex items-center gap-2">
-                      <Spinner /> Traduction…
+                      <Spinner /> Translating…
                     </span>
                   ) : (
-                    "Traduire"
+                    "Translate"
                   )}
                 </button>
                 {drafts && (
@@ -627,12 +1190,12 @@ export default function Home() {
                   >
                     {saving ? (
                       <span className="flex items-center gap-2">
-                        <Spinner /> Enregistrement…
+                        <Spinner /> Saving…
                       </span>
                     ) : saved ? (
-                      "✓ Enregistré"
+                      "✓ Saved"
                     ) : (
-                      "Enregistrer"
+                      "Save"
                     )}
                   </button>
                 )}
@@ -642,7 +1205,7 @@ export default function Home() {
             {loaded.allPrimaries.length > 1 && (
               <details className="rounded-lg border border-zinc-200 bg-white">
                 <summary className="cursor-pointer px-4 py-2 text-sm font-medium text-zinc-600">
-                  Sélecteur de Primary ({loaded.primary.versionTitle})
+                  Primary selector ({loaded.primary.versionTitle})
                 </summary>
                 <div className="border-t border-zinc-100 p-3 space-y-1">
                   {loaded.allPrimaries.map((v) => (
@@ -678,7 +1241,7 @@ export default function Home() {
               </summary>
               <div className="border-t border-zinc-100 p-4 space-y-4">
                 <Toggle
-                  label="Segments précédents"
+                  label="Previous segments"
                   checked={prevSegToggle}
                   onChange={(v) => {
                     setPrevSegToggle(v);
@@ -703,13 +1266,19 @@ export default function Home() {
                 )}
 
                 <Toggle
-                  label="Glossaire"
-                  checked={glossaryToggle}
+                  label="Glossary"
+                  checked={targetLanguage === "fr" && glossaryToggle}
                   onChange={(v) => {
+                    if (targetLanguage !== "fr") return;
                     setGlossaryToggle(v);
                     markSettingsChanged();
                   }}
                 />
+                {targetLanguage !== "fr" && (
+                  <div className="text-xs text-amber-700">
+                    Glossary works only for French for now.
+                  </div>
+                )}
 
                 <Toggle
                   label="Notes"
@@ -722,7 +1291,7 @@ export default function Home() {
 
                 <div>
                   <label className="block text-sm font-medium text-zinc-600 mb-1">
-                    Notes du traducteur
+                    Translator notes
                   </label>
                   <textarea
                     value={notes}
@@ -731,7 +1300,7 @@ export default function Home() {
                       markSettingsChanged();
                     }}
                     rows={2}
-                    placeholder="Style, registre, noms propres…"
+                    placeholder="Style, register, proper nouns…"
                     className="w-full rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y"
                   />
                 </div>
@@ -739,7 +1308,7 @@ export default function Home() {
                 {matchingGlossary.length > 0 && (
                   <div>
                     <span className="text-xs font-medium uppercase text-zinc-500">
-                      Termes du glossaire trouvés
+                      Matching glossary terms
                     </span>
                     <div className="mt-1 space-y-1">
                       {matchingGlossary.map(([term, fr]) => (
@@ -758,35 +1327,37 @@ export default function Home() {
                   </div>
                 )}
 
-                <div>
-                  <span className="text-xs font-medium uppercase text-zinc-500">
-                    Ajouter un terme
-                  </span>
-                  <div className="mt-1 flex gap-2">
-                    <input
-                      type="text"
-                      value={newTermSource}
-                      onChange={(e) => setNewTermSource(e.target.value)}
-                      placeholder="Terme source (hébreu)"
-                      dir="rtl"
-                      className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-                    />
-                    <input
-                      type="text"
-                      value={newTermFrench}
-                      onChange={(e) => setNewTermFrench(e.target.value)}
-                      placeholder="Français"
-                      className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-                    />
-                    <button
-                      onClick={handleAddGlossaryTerm}
-                      disabled={!newTermSource.trim() || !newTermFrench.trim()}
-                      className="rounded bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
-                    >
-                      +
-                    </button>
+                {targetLanguage === "fr" && (
+                  <div>
+                    <span className="text-xs font-medium uppercase text-zinc-500">
+                      Add term
+                    </span>
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        type="text"
+                        value={newTermSource}
+                        onChange={(e) => setNewTermSource(e.target.value)}
+                        placeholder="Source term (Hebrew)"
+                        dir="rtl"
+                        className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        value={newTermFrench}
+                        onChange={(e) => setNewTermFrench(e.target.value)}
+                        placeholder="French"
+                        className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+                      />
+                      <button
+                        onClick={handleAddGlossaryTerm}
+                        disabled={!newTermSource.trim() || !newTermFrench.trim()}
+                        className="rounded bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </details>
 
@@ -800,102 +1371,43 @@ export default function Home() {
                     : "grid-cols-1"
               }`}
             >
-              <div className="rounded-lg border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-100 px-4 py-2">
-                  <h3 className="text-sm font-medium text-zinc-500">
-                    Source ({loaded.primary.actualLanguage.toUpperCase()})
-                  </h3>
-                </div>
-                <div
-                  dir="rtl"
-                  className="p-4 space-y-3 font-serif text-base leading-relaxed text-zinc-900"
-                >
-                  {sourceComments.map((c, i) => (
-                    <div
-                      key={i}
-                      className="rounded bg-zinc-50 p-3"
-                      dangerouslySetInnerHTML={{ __html: c }}
-                    />
-                  ))}
-                </div>
-              </div>
+              <TextPanel
+                title={`Source (${loaded.primary.actualLanguage.toUpperCase()})`}
+                segments={sourceComments}
+                dir="rtl"
+                font="font-serif"
+              />
 
               {helperLangs.some((h) => h.enabled) && (
-                <div className="rounded-lg border border-zinc-200 bg-white">
-                  <div className="border-b border-zinc-100 px-4 py-2">
-                    <h3 className="text-sm font-medium text-zinc-500">
-                      Helper (
-                      {helperLangs
-                        .filter((h) => h.enabled)
-                        .map((h) => h.lang.toUpperCase())
-                        .join(", ")}
-                      )
-                    </h3>
-                  </div>
-                  <div
-                    dir="ltr"
-                    className="p-4 space-y-3 font-sans text-base leading-relaxed text-zinc-900"
-                  >
-                    {helperLangs
-                      .filter((h) => h.enabled)
-                      .flatMap((h) => {
-                        const texts = getComments(h.versions[0]);
-                        return texts.map((c, i) => (
-                          <div key={`${h.lang}-${i}`}>
-                            {helperLangs.filter((x) => x.enabled).length >
-                              1 && (
-                              <span className="text-xs text-zinc-400 mb-1 block">
-                                {h.lang.toUpperCase()}
-                              </span>
-                            )}
-                            <div
-                              className="rounded bg-zinc-50 p-3"
-                              dangerouslySetInnerHTML={{ __html: c }}
-                            />
-                          </div>
-                        ));
-                      })}
-                  </div>
-                </div>
+                <TextPanel
+                  title={`Helper (${helperLangs.filter((h) => h.enabled).map((h) => h.lang.toUpperCase()).join(", ")})`}
+                  segments={helperLangs
+                    .filter((h) => h.enabled)
+                    .flatMap((h) => getComments(h.versions[0]))}
+                />
               )}
 
               {drafts && (
-                <div className="rounded-lg border border-zinc-200 bg-white">
-                  <div className="border-b border-zinc-100 px-4 py-2">
-                    <h3 className="text-sm font-medium text-zinc-500">
-                      Draft (FR)
-                    </h3>
-                  </div>
-                  <div
-                    dir="ltr"
-                    className="p-4 space-y-3 font-sans text-base leading-relaxed"
-                  >
-                    {drafts.map((d, i) => (
-                      <textarea
-                        key={i}
-                        value={d}
-                        onChange={(e) => updateDraft(i, e.target.value)}
-                        rows={Math.max(3, d.split("\n").length + 1)}
-                        className="w-full rounded border border-zinc-200 bg-zinc-50 p-3 text-zinc-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y"
-                      />
-                    ))}
-                  </div>
-                </div>
+                <TextPanel
+                  title={`Draft (${targetLanguage.toUpperCase()})`}
+                  segments={drafts}
+                  editable
+                  onChange={updateDraft}
+                />
               )}
             </div>
 
             {saved && !gapMessage && (
               <div className="space-y-3">
                 <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                  Draft enregistré dans le Version file pour «{" "}
-                  {loaded.parsed.indexTitle} ».
+                  Draft saved to Version file for "{loaded.parsed.indexTitle}".
                 </div>
                 <div className="flex gap-3">
                   <button
                     onClick={() => setSaved(false)}
                     className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                   >
-                    Rester
+                    Stay
                   </button>
                   <button
                     onClick={handleNextGap}
@@ -904,23 +1416,23 @@ export default function Home() {
                   >
                     {searchingGap ? (
                       <span className="flex items-center gap-2">
-                        <Spinner /> Recherche du prochain Gap…
+                        <Spinner /> Searching for next Gap…
                       </span>
                     ) : (
-                      "Gap suivant"
+                      "Next Gap"
                     )}
                   </button>
                   <button
                     onClick={() => { reset(); setInput(""); }}
                     className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                   >
-                    Nouvelle URL
+                    New URL
                   </button>
                   <button
                     onClick={handleDownloadCSV}
                     className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
                   >
-                    Télécharger CSV
+                    Download CSV
                   </button>
                 </div>
               </div>
@@ -932,6 +1444,279 @@ export default function Home() {
               </div>
             )}
           </div>
+        )}
+        </>
+        )}
+
+        {mode === "chapter" && (
+        <>
+        {/* Chapter input bar */}
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={chapterInput}
+            onChange={(e) => setChapterInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLoadChapter()}
+            placeholder="Sefaria URL or Ref of the first segment of the chapter (e.g. Genesis 1:1)"
+            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <button
+            onClick={handleLoadChapter}
+            disabled={chapterLoading || !chapterInput.trim()}
+            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {chapterLoading ? <Spinner /> : "Load chapter"}
+          </button>
+        </div>
+
+        {chapterError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {chapterError}
+            <button
+              onClick={() => setChapterError(null)}
+              className="ml-3 font-medium underline"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {chapterItems.length > 0 && (() => {
+          const gaps = chapterItems.filter((it) => !it.hasTargetTranslation);
+          const alreadyTranslated = chapterItems.length - gaps.length;
+          const translatedCount = chapterItems.filter((it) => it.drafts).length;
+          const allTranslated = gaps.every((it) => it.drafts);
+          return (
+            <div className="mt-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3">
+                <div className="text-sm text-zinc-600">
+                  <span className="font-medium text-zinc-900">{chapterIndexTitle}</span>
+                  {" — "}
+                  {chapterItems.length} Segments · {gaps.length} Gaps
+                  {alreadyTranslated > 0 &&
+                    ` · ${alreadyTranslated} already in ${TARGET_LANGUAGE_NAMES[targetLanguage]}`}
+                  {translatedCount > 0 && ` · ${translatedCount} translated`}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleTranslateAllChapter}
+                    disabled={batchTranslating || gaps.length === 0 || allTranslated}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {batchTranslating ? (
+                      <span className="flex items-center gap-2">
+                        <Spinner /> Translating {batchProgress.done}/{batchProgress.total}…
+                      </span>
+                    ) : (
+                      "Translate all"
+                    )}
+                  </button>
+                  <button
+                    onClick={handleSaveAllChapter}
+                    disabled={batchSaving || translatedCount === 0}
+                    className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50"
+                  >
+                    {batchSaving ? (
+                      <span className="flex items-center gap-2">
+                        <Spinner /> Saving…
+                      </span>
+                    ) : (
+                      "Save all"
+                    )}
+                  </button>
+                  <button
+                    onClick={() => downloadCSV(chapterIndexTitle)}
+                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Download CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {chapterItems.map((item) => (
+                  <div key={item.ref} className="rounded-lg border border-zinc-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2">
+                      <h3 className="text-sm font-medium text-zinc-800">{item.ref}</h3>
+                      <div className="flex items-center gap-2">
+                        {item.hasTargetTranslation && (
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">
+                            Already in {TARGET_LANGUAGE_NAMES[targetLanguage]}
+                          </span>
+                        )}
+                        {item.status === "error" && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700" title={item.error}>
+                            Error
+                          </span>
+                        )}
+                        {item.status === "saved" && (
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+                            ✓ Saved
+                          </span>
+                        )}
+                        {!item.hasTargetTranslation && (
+                          <>
+                            <button
+                              onClick={() => translateChapterItem(item)}
+                              disabled={item.status === "translating"}
+                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {item.status === "translating" ? <Spinner /> : "Translate"}
+                            </button>
+                            {item.drafts && (
+                              <button
+                                onClick={() => saveChapterItem(item)}
+                                disabled={item.status === "saving" || item.status === "saved"}
+                                className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-900 disabled:opacity-50"
+                              >
+                                {item.status === "saving" ? <Spinner /> : "Save"}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div
+                      className={`grid gap-4 p-4 ${
+                        item.drafts
+                          ? "grid-cols-1 lg:grid-cols-3"
+                          : item.helperComments.length > 0
+                            ? "grid-cols-1 lg:grid-cols-2"
+                            : "grid-cols-1"
+                      }`}
+                    >
+                      <TextPanel
+                        title={`Source (${item.primary.actualLanguage.toUpperCase()})`}
+                        segments={item.comments}
+                        dir="rtl"
+                        font="font-serif"
+                      />
+                      {item.helperComments.length > 0 && (
+                        <TextPanel title="Helper (EN)" segments={item.helperComments} />
+                      )}
+                      {item.drafts && (
+                        <TextPanel
+                          title={`Draft (${targetLanguage.toUpperCase()})`}
+                          segments={item.drafts}
+                          editable
+                          onChange={(idx, value) => updateChapterDraft(item.ref, idx, value)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+        </>
+        )}
+
+        {mode === "book" && (
+        <>
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={bookInput}
+            onChange={(e) => setBookInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleLoadBook()}
+            placeholder="Book URL or index title (e.g. Genesis, Berakhot)"
+            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <button
+            onClick={handleLoadBook}
+            disabled={bookLoading || !bookInput.trim()}
+            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {bookLoading ? <Spinner /> : "Load book"}
+          </button>
+        </div>
+
+        {bookError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {bookError}
+            <button
+              onClick={() => setBookError(null)}
+              className="ml-3 font-medium underline"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {outline && (
+          <div className="mt-6 rounded-lg border border-zinc-200 bg-white">
+            <div className="border-b border-zinc-100 px-4 py-3">
+              <h2 className="text-sm font-medium text-zinc-800">
+                {outline.indexTitle}
+                <span className="ml-2 font-normal text-zinc-500">
+                  {outline.nodes.length} {outline.sectionName.toLowerCase()}
+                  {outline.nodes.length === 1 ? "" : "s"}
+                </span>
+              </h2>
+            </div>
+            <ul className="max-h-[70vh] overflow-y-auto p-2">
+              {outline.nodes.map((node) => {
+                const expanded = expandedRefs.has(node.ref);
+                const count = childCountFor(node);
+                return (
+                  <li key={node.ref} className="rounded">
+                    <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-50">
+                      <button
+                        onClick={() => toggleExpandNode(node)}
+                        className="w-6 shrink-0 text-zinc-400 hover:text-zinc-700"
+                        aria-label={expanded ? "Collapse" : "Expand"}
+                      >
+                        {expanded ? "▾" : "▸"}
+                      </button>
+                      <span className="flex-1 text-sm text-zinc-800">
+                        {node.label}
+                        {count != null && (
+                          <span className="ml-2 text-xs text-zinc-400">
+                            {count} segments
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        onClick={() => translateSectionFromTree(node.ref)}
+                        className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                      >
+                        Translate section
+                      </button>
+                    </div>
+                    {expanded && count != null && count > 0 && (
+                      <ul className="mb-2 ml-8 space-y-0.5">
+                        {Array.from({ length: count }, (_, i) => {
+                          const ref = leafRef(node.ref, i + 1);
+                          return (
+                            <li
+                              key={ref}
+                              className="flex items-center justify-between rounded px-2 py-1 hover:bg-zinc-50"
+                            >
+                              <span className="text-sm text-zinc-600">{ref}</span>
+                              <button
+                                onClick={() => translateLeafFromTree(ref)}
+                                className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                              >
+                                Translate
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {expanded && count == null && (
+                      <p className="mb-2 ml-8 text-xs text-zinc-400">
+                        No segment count for this section.
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        </>
         )}
       </div>
     </div>

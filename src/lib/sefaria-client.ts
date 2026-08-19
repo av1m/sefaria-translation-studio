@@ -14,6 +14,10 @@ export interface SefariaTextsResponse {
   versions: SefariaVersion[];
   next?: string;
   prev?: string;
+  sectionRef?: string;
+  sectionNames?: string[];
+  addressTypes?: string[];
+  firstAvailableSectionRef?: string;
 }
 
 interface SefariaClientOptions {
@@ -22,6 +26,14 @@ interface SefariaClientOptions {
 }
 
 const DEFAULT_BASE_URL = "https://www.sefaria.org";
+
+const LANGUAGE_FAMILIES: Record<string, string> = {
+  fr: "french",
+  es: "spanish",
+  de: "german",
+  it: "italian",
+  pt: "portuguese",
+};
 
 export class SefariaClient {
   private baseUrl: string;
@@ -32,9 +44,14 @@ export class SefariaClient {
     this.fetch = options.fetch ?? globalThis.fetch;
   }
 
-  async getTexts(ref: string): Promise<SefariaTextsResponse> {
+  async getTexts(
+    ref: string,
+    targetLanguageActual?: string,
+  ): Promise<SefariaTextsResponse> {
     const encoded = encodeURIComponent(ref);
-    const url = `${this.baseUrl}/api/v3/texts/${encoded}?version=english|all&version=hebrew|all&version=french|all`;
+    const actualLanguage = targetLanguageActual ?? "fr";
+    const translationFamily = LANGUAGE_FAMILIES[actualLanguage] ?? actualLanguage;
+    const url = `${this.baseUrl}/api/v3/texts/${encoded}?version=english|all&version=hebrew|all&version=${translationFamily}|all`;
     const data = await this.fetchJson(url);
     return {
       ref: data.ref,
@@ -42,6 +59,14 @@ export class SefariaClient {
       versions: (data.versions ?? []).map(mapVersion),
       next: data.next ?? undefined,
       prev: data.prev ?? undefined,
+      sectionRef: data.sectionRef ?? undefined,
+      sectionNames: Array.isArray(data.sectionNames)
+        ? data.sectionNames
+        : undefined,
+      addressTypes: Array.isArray(data.addressTypes)
+        ? data.addressTypes
+        : undefined,
+      firstAvailableSectionRef: data.firstAvailableSectionRef ?? undefined,
     };
   }
 
@@ -58,10 +83,10 @@ export class SefariaClient {
     return extractTitles(data);
   }
 
-  async isGap(ref: string): Promise<boolean> {
-    const { versions } = await this.getTexts(ref);
+  async isGap(ref: string, targetLanguageActual: string = "fr"): Promise<boolean> {
+    const { versions } = await this.getTexts(ref, targetLanguageActual);
     return !versions.some(
-      (v) => v.actualLanguage === "fr" && hasContent(v.text),
+      (v) => v.actualLanguage === targetLanguageActual && hasContent(v.text),
     );
   }
 

@@ -32,6 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.local.example
+
+# local translation dumps (never publish drafts accidentally)
+/data/versions/*.json
+!/data/versions/.gitkeep
+/src/data/versions/*.json
+!/src/data/versions/.gitkeep
 
 # vercel
 .vercel

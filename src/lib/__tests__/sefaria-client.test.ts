@@ -64,6 +64,7 @@ describe("SefariaClient", () => {
       );
       expect(heVersion).toBeDefined();
       expect(typeof heVersion!.text).toBe("string");
+      expect(result.sectionNames).toEqual(["Chapter", "Verse"]);
     });
   });
 

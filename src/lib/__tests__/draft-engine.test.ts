@@ -102,6 +102,7 @@ describe("generateDraft", () => {
       ref: "Genesis.1.1",
       source: "בראשית ברא",
       contextPack: {},
+      targetLanguage: "fr",
       llmConfig: baseLlmConfig,
     };
     const result = await generateDraft(req, stubCaller);
@@ -115,6 +116,7 @@ describe("generateDraft", () => {
       ref: "Rashi.Genesis.1.1",
       source: ["comment1", "comment2", "comment3"],
       contextPack: {},
+      targetLanguage: "fr",
       llmConfig: baseLlmConfig,
     };
     const result = await generateDraft(req, stubCaller);
