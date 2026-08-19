@@ -1,8 +1,10 @@
 # Sefaria Translation Studio
 
+[![Powered by Sefaria](public/badges/powered-by-sefaria.png)](https://www.sefaria.org)
+
 Independent, open proof of concept for **human-reviewed, AI-assisted translation** of Sefaria texts.
 
-This app is **powered by Sefaria’s public API and data model**. It does **not** write to Sefaria’s library or content pipeline. Drafts stay on your machine until a human exports a Version file and hands it off.
+This app is **powered by Sefaria’s public API and data model**. It does **not** write to Sefaria’s library or content pipeline. Drafts stay on your machine until a human exports a Version file and hands it off. The [Powered by Sefaria](https://developers.sefaria.org/docs/usage-of-our-name-and-logo) badge means we use Sefaria’s data — it does **not** mean Sefaria built or endorses this tool.
 
 Built in response to Sefaria Developer Outreach’s invitation to experiment in the open: a documented workflow that content and product teams can inspect, not a replacement for human translators.
 

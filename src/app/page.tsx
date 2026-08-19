@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { parseRef, type ParsedRef } from "@/lib/parse-ref";
 import type { SefariaVersion } from "@/lib/sefaria-client";
 import { leafRef, type IndexOutline } from "@/lib/index-outline";
+import { PoweredBySefaria } from "@/components/powered-by-sefaria";
 
 interface LoadedRef {
   parsed: ParsedRef;
@@ -125,7 +126,7 @@ function TextPanel({
                 value={s}
                 onChange={(e) => onChange?.(i, e.target.value)}
                 rows={Math.max(3, s.split("\n").length + 1)}
-                className="w-full rounded border border-zinc-200 bg-zinc-50 p-3 text-zinc-900 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y"
+                className="w-full rounded border border-zinc-200 bg-zinc-50 p-3 text-zinc-900 focus:border-sefaria-mid focus:outline-none focus:ring-1 focus:ring-sefaria-mid resize-y"
               />
             ) : (
               <pre
@@ -167,7 +168,7 @@ function Toggle({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
-          checked ? "bg-blue-600" : "bg-zinc-300"
+          checked ? "bg-sefaria" : "bg-zinc-300"
         }`}
       >
         <span
@@ -935,12 +936,15 @@ export default function Home() {
       : [];
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-900">
-            Sefaria Translation Studio
-          </h1>
+    <div className="flex flex-col min-h-screen bg-sefaria-wash">
+      <header className="bg-sefaria px-6 py-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="text-xl font-semibold text-white">
+              Sefaria Translation Studio
+            </h1>
+            <PoweredBySefaria variant="white" />
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={async () => {
@@ -989,13 +993,13 @@ export default function Home() {
                   window.setTimeout(() => setDebugExportMessage(null), 4000);
                 }
               }}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+              className="rounded-lg border border-white/30 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10"
             >
               Export debug
             </button>
             <button
               onClick={() => setShowSettings(!showSettings)}
-              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+              className="rounded-lg border border-white/30 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10"
             >
               ⚙ Settings
             </button>
@@ -1013,7 +1017,7 @@ export default function Home() {
             </div>
           )}
         {showSettings && (
-          <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-white/15 bg-white p-4 sm:grid-cols-3">
             <div>
               <label className="block text-xs font-medium text-zinc-500 mb-1">
                 Provider
@@ -1090,8 +1094,8 @@ export default function Home() {
             onClick={() => setMode("single")}
             className={`rounded-md px-4 py-1.5 text-sm font-medium ${
               mode === "single"
-                ? "bg-blue-600 text-white"
-                : "text-zinc-600 hover:bg-zinc-50"
+                ? "bg-sefaria text-white"
+                : "text-zinc-600 hover:bg-sefaria-light"
             }`}
           >
             Segment
@@ -1100,8 +1104,8 @@ export default function Home() {
             onClick={() => setMode("chapter")}
             className={`rounded-md px-4 py-1.5 text-sm font-medium ${
               mode === "chapter"
-                ? "bg-blue-600 text-white"
-                : "text-zinc-600 hover:bg-zinc-50"
+                ? "bg-sefaria text-white"
+                : "text-zinc-600 hover:bg-sefaria-light"
             }`}
           >
             Chapter
@@ -1110,8 +1114,8 @@ export default function Home() {
             onClick={() => setMode("book")}
             className={`rounded-md px-4 py-1.5 text-sm font-medium ${
               mode === "book"
-                ? "bg-blue-600 text-white"
-                : "text-zinc-600 hover:bg-zinc-50"
+                ? "bg-sefaria text-white"
+                : "text-zinc-600 hover:bg-sefaria-light"
             }`}
           >
             Book
@@ -1128,12 +1132,12 @@ export default function Home() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleLoad()}
             placeholder="Sefaria URL or Ref (e.g. Rashi on Genesis 1:1)"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-sefaria-mid focus:outline-none focus:ring-1 focus:ring-sefaria-mid"
           />
           <button
             onClick={() => handleLoad()}
             disabled={loading || !input.trim()}
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-lg bg-sefaria px-5 py-2.5 text-sm font-medium text-white hover:bg-sefaria-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? <Spinner /> : "Load"}
           </button>
@@ -1172,7 +1176,7 @@ export default function Home() {
                 <button
                   onClick={handleTranslate}
                   disabled={drafting}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  className="rounded-lg bg-sefaria px-4 py-2 text-sm font-medium text-white hover:bg-sefaria-hover disabled:opacity-50"
                 >
                   {drafting ? (
                     <span className="flex items-center gap-2">
@@ -1186,7 +1190,7 @@ export default function Home() {
                   <button
                     onClick={handleSave}
                     disabled={saving || saved}
-                    className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50"
+                    className="rounded-lg bg-sefaria-mid px-4 py-2 text-sm font-medium text-white hover:bg-sefaria disabled:opacity-50"
                   >
                     {saving ? (
                       <span className="flex items-center gap-2">
@@ -1214,8 +1218,8 @@ export default function Home() {
                       onClick={() => handleSelectPrimary(v)}
                       className={`block w-full rounded px-3 py-1.5 text-left text-sm ${
                         v.versionTitle === loaded.primary.versionTitle
-                          ? "bg-blue-50 text-blue-700 font-medium"
-                          : "text-zinc-700 hover:bg-zinc-50"
+                          ? "bg-sefaria-light text-sefaria font-medium"
+                          : "text-zinc-700 hover:bg-sefaria-light"
                       }`}
                     >
                       {v.versionTitle}{" "}
@@ -1301,7 +1305,7 @@ export default function Home() {
                     }}
                     rows={2}
                     placeholder="Style, register, proper nouns…"
-                    className="w-full rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y"
+                    className="w-full rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-sefaria-mid focus:outline-none focus:ring-1 focus:ring-sefaria-mid resize-y"
                   />
                 </div>
 
@@ -1339,19 +1343,19 @@ export default function Home() {
                         onChange={(e) => setNewTermSource(e.target.value)}
                         placeholder="Source term (Hebrew)"
                         dir="rtl"
-                        className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+                        className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-sefaria-mid focus:outline-none"
                       />
                       <input
                         type="text"
                         value={newTermFrench}
                         onChange={(e) => setNewTermFrench(e.target.value)}
                         placeholder="French"
-                        className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+                        className="flex-1 rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm focus:border-sefaria-mid focus:outline-none"
                       />
                       <button
                         onClick={handleAddGlossaryTerm}
                         disabled={!newTermSource.trim() || !newTermFrench.trim()}
-                        className="rounded bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                        className="rounded bg-sefaria-mid px-3 py-1.5 text-xs font-medium text-white hover:bg-sefaria disabled:opacity-50"
                       >
                         +
                       </button>
@@ -1405,14 +1409,14 @@ export default function Home() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setSaved(false)}
-                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                    className="rounded-lg border border-sefaria/20 bg-white px-4 py-2 text-sm font-medium text-sefaria hover:bg-sefaria-light"
                   >
                     Stay
                   </button>
                   <button
                     onClick={handleNextGap}
                     disabled={searchingGap}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="rounded-lg bg-sefaria px-4 py-2 text-sm font-medium text-white hover:bg-sefaria-hover disabled:opacity-50"
                   >
                     {searchingGap ? (
                       <span className="flex items-center gap-2">
@@ -1424,13 +1428,13 @@ export default function Home() {
                   </button>
                   <button
                     onClick={() => { reset(); setInput(""); }}
-                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                    className="rounded-lg border border-sefaria/20 bg-white px-4 py-2 text-sm font-medium text-sefaria hover:bg-sefaria-light"
                   >
                     New URL
                   </button>
                   <button
                     onClick={handleDownloadCSV}
-                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                    className="rounded-lg border border-sefaria/20 bg-white px-4 py-2 text-sm font-medium text-sefaria hover:bg-sefaria-light"
                   >
                     Download CSV
                   </button>
@@ -1458,12 +1462,12 @@ export default function Home() {
             onChange={(e) => setChapterInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleLoadChapter()}
             placeholder="Sefaria URL or Ref of the first segment of the chapter (e.g. Genesis 1:1)"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-sefaria-mid focus:outline-none focus:ring-1 focus:ring-sefaria-mid"
           />
           <button
             onClick={handleLoadChapter}
             disabled={chapterLoading || !chapterInput.trim()}
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-lg bg-sefaria px-5 py-2.5 text-sm font-medium text-white hover:bg-sefaria-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {chapterLoading ? <Spinner /> : "Load chapter"}
           </button>
@@ -1501,7 +1505,7 @@ export default function Home() {
                   <button
                     onClick={handleTranslateAllChapter}
                     disabled={batchTranslating || gaps.length === 0 || allTranslated}
-                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                    className="rounded-lg bg-sefaria px-4 py-2 text-sm font-medium text-white hover:bg-sefaria-hover disabled:opacity-50"
                   >
                     {batchTranslating ? (
                       <span className="flex items-center gap-2">
@@ -1514,7 +1518,7 @@ export default function Home() {
                   <button
                     onClick={handleSaveAllChapter}
                     disabled={batchSaving || translatedCount === 0}
-                    className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-900 disabled:opacity-50"
+                    className="rounded-lg bg-sefaria-mid px-4 py-2 text-sm font-medium text-white hover:bg-sefaria disabled:opacity-50"
                   >
                     {batchSaving ? (
                       <span className="flex items-center gap-2">
@@ -1526,7 +1530,7 @@ export default function Home() {
                   </button>
                   <button
                     onClick={() => downloadCSV(chapterIndexTitle)}
-                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                    className="rounded-lg border border-sefaria/20 bg-white px-4 py-2 text-sm font-medium text-sefaria hover:bg-sefaria-light"
                   >
                     Download CSV
                   </button>
@@ -1559,7 +1563,7 @@ export default function Home() {
                             <button
                               onClick={() => translateChapterItem(item)}
                               disabled={item.status === "translating"}
-                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                              className="rounded-lg bg-sefaria px-3 py-1.5 text-xs font-medium text-white hover:bg-sefaria-hover disabled:opacity-50"
                             >
                               {item.status === "translating" ? <Spinner /> : "Translate"}
                             </button>
@@ -1567,7 +1571,7 @@ export default function Home() {
                               <button
                                 onClick={() => saveChapterItem(item)}
                                 disabled={item.status === "saving" || item.status === "saved"}
-                                className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-900 disabled:opacity-50"
+                                className="rounded-lg bg-sefaria-mid px-3 py-1.5 text-xs font-medium text-white hover:bg-sefaria disabled:opacity-50"
                               >
                                 {item.status === "saving" ? <Spinner /> : "Save"}
                               </button>
@@ -1621,12 +1625,12 @@ export default function Home() {
             onChange={(e) => setBookInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleLoadBook()}
             placeholder="Book URL or index title (e.g. Genesis, Berakhot)"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-sefaria-mid focus:outline-none focus:ring-1 focus:ring-sefaria-mid"
           />
           <button
             onClick={handleLoadBook}
             disabled={bookLoading || !bookInput.trim()}
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-lg bg-sefaria px-5 py-2.5 text-sm font-medium text-white hover:bg-sefaria-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {bookLoading ? <Spinner /> : "Load book"}
           </button>
@@ -1661,7 +1665,7 @@ export default function Home() {
                 const count = childCountFor(node);
                 return (
                   <li key={node.ref} className="rounded">
-                    <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-50">
+                    <div className="flex items-center gap-2 px-2 py-1.5 hover:bg-sefaria-light">
                       <button
                         onClick={() => toggleExpandNode(node)}
                         className="w-6 shrink-0 text-zinc-400 hover:text-zinc-700"
@@ -1679,7 +1683,7 @@ export default function Home() {
                       </span>
                       <button
                         onClick={() => translateSectionFromTree(node.ref)}
-                        className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                        className="rounded bg-sefaria px-2 py-1 text-xs font-medium text-white hover:bg-sefaria-hover"
                       >
                         Translate section
                       </button>
@@ -1691,12 +1695,12 @@ export default function Home() {
                           return (
                             <li
                               key={ref}
-                              className="flex items-center justify-between rounded px-2 py-1 hover:bg-zinc-50"
+                              className="flex items-center justify-between rounded px-2 py-1 hover:bg-sefaria-light"
                             >
                               <span className="text-sm text-zinc-600">{ref}</span>
                               <button
                                 onClick={() => translateLeafFromTree(ref)}
-                                className="rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700"
+                                className="rounded bg-sefaria px-2 py-1 text-xs font-medium text-white hover:bg-sefaria-hover"
                               >
                                 Translate
                               </button>
@@ -1719,6 +1723,14 @@ export default function Home() {
         </>
         )}
       </div>
+      <footer className="mt-auto bg-sefaria px-6 py-4">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
+          <p className="text-xs text-white/70">
+            Independent project. Not affiliated with or developed by Sefaria.
+          </p>
+          <PoweredBySefaria variant="white" lazy />
+        </div>
+      </footer>
     </div>
   );
 }
