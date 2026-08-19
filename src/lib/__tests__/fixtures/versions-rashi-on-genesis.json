@@ -1,0 +1,58 @@
+[
+  {
+    "status": "locked",
+    "priority": 5.0,
+    "license": "Public Domain",
+    "language": "en",
+    "title": "Rashi on Genesis",
+    "versionSource": "https://www.nli.org.il/he/books/NNL_ALEPH001969084",
+    "versionTitle": "Pentateuch with Rashi's commentary by M. Rosenbaum and A.M. Silbermann, 1929-1934",
+    "actualLanguage": "en",
+    "languageFamilyName": "english",
+    "isSource": false,
+    "isPrimary": false,
+    "direction": "ltr"
+  },
+  {
+    "status": "locked",
+    "priority": 4.0,
+    "license": "Public Domain",
+    "language": "he",
+    "title": "Rashi on Genesis",
+    "versionSource": "https://www.nli.org.il/he/books/NNL_ALEPH001969084",
+    "versionTitle": "Pentateuch with Rashi's commentary by M. Rosenbaum and A.M. Silbermann, 1929-1934",
+    "actualLanguage": "he",
+    "languageFamilyName": "hebrew",
+    "isSource": true,
+    "isPrimary": true,
+    "direction": "rtl"
+  },
+  {
+    "status": "locked",
+    "priority": 3.0,
+    "license": "CC-BY",
+    "language": "en",
+    "title": "Rashi on Genesis",
+    "versionSource": "https://www.nli.org.il/he/books/NNL_ALEPH002691623",
+    "versionTitle": "Rashi Chumash, Metsudah Publications, 2009",
+    "actualLanguage": "en",
+    "languageFamilyName": "english",
+    "isSource": false,
+    "isPrimary": false,
+    "direction": "ltr"
+  },
+  {
+    "status": "locked",
+    "priority": "",
+    "license": "Public Domain",
+    "language": "en",
+    "title": "Rashi on Genesis",
+    "versionSource": "http://sammlungen.ub.uni-frankfurt.de/freimann/content/titleinfo/7716358",
+    "versionTitle": "Raschis Pentateuchkommentar, trans. Rabb. Dr. Selig Bamberger, Hamburg, 1922. Edited by Igor Itkin [de]",
+    "actualLanguage": "de",
+    "languageFamilyName": "german",
+    "isSource": false,
+    "isPrimary": false,
+    "direction": "ltr"
+  }
+]

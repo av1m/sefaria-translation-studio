@@ -1,0 +1,36 @@
+{
+  "Tanakh": {
+    "Torah": [
+      {
+        "title": "Genesis",
+        "url": "/Genesis.1?ven=french%7CBible+du+Rabbinat+1899+%5Bfr%5D&lang=bi",
+        "versionTitle": "Bible du Rabbinat 1899 [fr]",
+        "rtlLanguage": "en"
+      },
+      {
+        "title": "Exodus",
+        "url": "/Exodus.1?ven=french%7CBible+du+Rabbinat+1899+%5Bfr%5D&lang=bi",
+        "versionTitle": "Bible du Rabbinat 1899 [fr]",
+        "rtlLanguage": "en"
+      }
+    ],
+    "Prophets": [
+      {
+        "title": "Joshua",
+        "url": "/Joshua.1?ven=french%7CBible+du+Rabbinat+1899+%5Bfr%5D&lang=bi",
+        "versionTitle": "Bible du Rabbinat 1899 [fr]",
+        "rtlLanguage": "en"
+      }
+    ]
+  },
+  "Mishnah": {
+    "Seder Zeraim": [
+      {
+        "title": "Mishnah Berakhot",
+        "url": "/Mishnah_Berakhot.1?ven=french",
+        "versionTitle": "French Mishnah [fr]",
+        "rtlLanguage": "en"
+      }
+    ]
+  }
+}

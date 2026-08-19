@@ -1,0 +1,76 @@
+{
+  "versions": [
+    {
+      "status": "locked",
+      "priority": 4.0,
+      "license": "Public Domain",
+      "language": "he",
+      "versionSource": "https://www.nli.org.il/he/books/NNL_ALEPH001969084",
+      "versionTitle": "Pentateuch with Rashi's commentary by M. Rosenbaum and A.M. Silbermann, 1929-1934",
+      "actualLanguage": "he",
+      "languageFamilyName": "hebrew",
+      "isSource": true,
+      "isPrimary": true,
+      "direction": "rtl",
+      "text": [
+        "<b>\u05d1\u05e8\u05d0\u05e9\u05d9\u05ea.</b> \u05d0\u05de\u05e8 \u05e8\u05d1\u05d9 \u05d9\u05e6\u05d7\u05e7",
+        "<b>\u05d1\u05e8\u05d0\u05e9\u05d9\u05ea \u05d1\u05e8\u05d0.</b> \u05d0\u05d9\u05df \u05d4\u05de\u05e7\u05e8\u05d0 \u05d4\u05d6\u05d4 \u05d0\u05d5\u05de\u05e8 \u05d0\u05dc\u05d0 \u05d3\u05e8\u05e9\u05e0\u05d9",
+        "<b>\u05d1\u05e8\u05d0 \u05d0\u05dc\u05d4\u05d9\u05dd.</b> \u05d5\u05dc\u05d0 \u05d0\u05de\u05e8 \u05d1\u05e8\u05d0 \u05d4'"
+      ]
+    },
+    {
+      "status": "locked",
+      "priority": 5.0,
+      "license": "Public Domain",
+      "language": "en",
+      "versionSource": "https://www.nli.org.il/he/books/NNL_ALEPH001969084",
+      "versionTitle": "Pentateuch with Rashi's commentary by M. Rosenbaum and A.M. Silbermann, 1929-1934",
+      "actualLanguage": "en",
+      "languageFamilyName": "english",
+      "isSource": false,
+      "isPrimary": false,
+      "direction": "ltr",
+      "text": [
+        "<b>IN THE BEGINNING.</b> R. Isaac said: The Torah should have commenced...",
+        "<b>IN THE BEGINNING GOD CREATED.</b> This verse says nothing but \"Expound me!\"...",
+        "<b>GOD CREATED.</b> But it does not say \"the Lord created\"..."
+      ]
+    }
+  ],
+  "available_versions": [
+    {
+      "language": "he",
+      "versionTitle": "Pentateuch with Rashi's commentary by M. Rosenbaum and A.M. Silbermann, 1929-1934",
+      "actualLanguage": "he",
+      "isSource": true,
+      "isPrimary": true
+    },
+    {
+      "language": "en",
+      "versionTitle": "Pentateuch with Rashi's commentary by M. Rosenbaum and A.M. Silbermann, 1929-1934",
+      "actualLanguage": "en",
+      "isSource": false,
+      "isPrimary": false
+    },
+    {
+      "language": "en",
+      "versionTitle": "Rashi Chumash, Metsudah Publications, 2009",
+      "actualLanguage": "en",
+      "isSource": false,
+      "isPrimary": false
+    },
+    {
+      "language": "en",
+      "versionTitle": "Portuguese Version [pt]",
+      "actualLanguage": "pt",
+      "isSource": false,
+      "isPrimary": false
+    }
+  ],
+  "ref": "Rashi on Genesis 1:1",
+  "heRef": "\u05e8\u05e9\"\u05d9 \u05e2\u05dc \u05d1\u05e8\u05d0\u05e9\u05d9\u05ea \u05d0\u05f3:\u05d0\u05f3",
+  "indexTitle": "Rashi on Genesis",
+  "next": "Rashi on Genesis 1:2",
+  "prev": null,
+  "sectionNames": ["Chapter", "Verse", "Comment"]
+}
