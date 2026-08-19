@@ -10,6 +10,7 @@ interface LoadedRef {
   primary: SefariaVersion;
   helper: SefariaVersion | null;
   allPrimaries: SefariaVersion[];
+  next?: string;
 }
 
 type Glossary = Record<string, string>;
@@ -129,6 +130,9 @@ export default function Home() {
   const [settingsChanged, setSettingsChanged] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
 
+  const [searchingGap, setSearchingGap] = useState(false);
+  const [gapMessage, setGapMessage] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/glossary")
       .then((r) => r.json())
@@ -153,6 +157,7 @@ export default function Home() {
     setNotes("");
     setPrevSegments(null);
     setSettingsChanged(false);
+    setGapMessage(null);
   };
 
   const fetchPrevSegments = useCallback(async (prevRef: string) => {
@@ -269,6 +274,7 @@ export default function Home() {
         primary,
         helper,
         allPrimaries: primaries,
+        next: data.next ?? undefined,
       });
 
       if (data.prev) {
@@ -408,6 +414,79 @@ export default function Home() {
       prev.map((h) => (h.lang === lang ? { ...h, enabled: !h.enabled } : h)),
     );
     markSettingsChanged();
+  };
+
+  const fetchRefData = async (ref: string) => {
+    const parsed = parseRef(ref);
+    const encodedRef = encodeURIComponent(parsed.ref);
+    const endpoint = `v3/texts/${encodedRef}?version=all`;
+    const res = await fetch(`/api/sefaria?endpoint=${encodeURIComponent(endpoint)}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Erreur Sefaria (${res.status})`);
+    }
+    const data = await res.json();
+    const versions: SefariaVersion[] = (data.versions ?? []).map((v: any) => ({
+      versionTitle: v.versionTitle ?? "",
+      language: v.language ?? "",
+      actualLanguage: v.actualLanguage ?? "",
+      isPrimary: v.isPrimary ?? false,
+      isSource: v.isSource ?? false,
+      license: v.license,
+      text: v.text ?? "",
+    }));
+    const hasFrench = versions.some(
+      (v) => v.actualLanguage === "fr" && hasContent(v.text),
+    );
+    const primaries = versions.filter((v) => isSourceLang(v.actualLanguage));
+    const primary = primaries.find((v) => v.isPrimary || v.isSource) ?? primaries[0];
+    const helper = versions.find((v) => v.actualLanguage === "en" && hasContent(v.text)) ?? null;
+    return { parsed: { ...parsed, ref: data.ref ?? parsed.ref }, versions, primary, helper, allPrimaries: primaries, next: data.next as string | undefined, hasFrench };
+  };
+
+  const handleNextGap = async () => {
+    if (!loaded) return;
+    setSearchingGap(true);
+    setGapMessage(null);
+    try {
+      let nextRef = loaded.next;
+      while (nextRef) {
+        const result = await fetchRefData(nextRef);
+        if (!result.hasFrench && result.primary) {
+          setInput(nextRef);
+          setLoaded({
+            parsed: result.parsed,
+            versions: result.versions,
+            primary: result.primary,
+            helper: result.helper,
+            allPrimaries: result.allPrimaries,
+            next: result.next,
+          });
+          setDrafts(null);
+          setSaved(false);
+          setGapMessage(null);
+          return;
+        }
+        nextRef = result.next;
+      }
+      setGapMessage("Tous les Segments de cet Index ont déjà une traduction française !");
+      setSaved(false);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSearchingGap(false);
+    }
+  };
+
+  const handleDownloadCSV = () => {
+    if (!loaded) return;
+    const url = `/api/version-file?indexTitle=${encodeURIComponent(loaded.parsed.indexTitle)}&format=csv`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${loaded.parsed.indexTitle} [fr].csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const sourceComments = loaded ? getComments(loaded.primary) : [];
@@ -805,10 +884,51 @@ export default function Home() {
               )}
             </div>
 
-            {saved && (
-              <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                Draft enregistré dans le Version file pour «{" "}
-                {loaded.parsed.indexTitle} ».
+            {saved && !gapMessage && (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                  Draft enregistré dans le Version file pour «{" "}
+                  {loaded.parsed.indexTitle} ».
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSaved(false)}
+                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Rester
+                  </button>
+                  <button
+                    onClick={handleNextGap}
+                    disabled={searchingGap}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {searchingGap ? (
+                      <span className="flex items-center gap-2">
+                        <Spinner /> Recherche du prochain Gap…
+                      </span>
+                    ) : (
+                      "Gap suivant"
+                    )}
+                  </button>
+                  <button
+                    onClick={() => { reset(); setInput(""); }}
+                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Nouvelle URL
+                  </button>
+                  <button
+                    onClick={handleDownloadCSV}
+                    className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                  >
+                    Télécharger CSV
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {gapMessage && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {gapMessage}
               </div>
             )}
           </div>
