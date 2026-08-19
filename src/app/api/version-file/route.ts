@@ -9,6 +9,21 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Missing indexTitle" }, { status: 400 });
   }
 
+  const format = request.nextUrl.searchParams.get("format");
+
+  if (format === "csv") {
+    const csv = await store.exportCSV(indexTitle);
+    if (!csv) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${indexTitle} [fr].csv"`,
+      },
+    });
+  }
+
   const data = await store.load(indexTitle);
   if (!data) {
     return Response.json({ error: "Not found" }, { status: 404 });
