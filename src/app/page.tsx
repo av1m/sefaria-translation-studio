@@ -5,6 +5,7 @@ import { parseRef, type ParsedRef } from "@/lib/parse-ref";
 import type { SefariaVersion } from "@/lib/sefaria-client";
 import { leafRef, type IndexOutline } from "@/lib/index-outline";
 import { PoweredBySefaria } from "@/components/powered-by-sefaria";
+import { SefariaRefLink } from "@/components/sefaria-ref-link";
 
 interface LoadedRef {
   parsed: ParsedRef;
@@ -79,6 +80,26 @@ function hasContent(text: string | string[]): boolean {
   return typeof text === "string" && text.length > 0;
 }
 
+function segmentToDrafts(text: string | string[]): string[] {
+  return Array.isArray(text) ? [...text] : [text];
+}
+
+async function fetchVersionSegments(
+  indexTitle: string,
+  actualLanguage: TargetLanguage,
+): Promise<Record<string, string | string[]>> {
+  try {
+    const res = await fetch(
+      `/api/version-file?indexTitle=${encodeURIComponent(indexTitle)}&actualLanguage=${encodeURIComponent(actualLanguage)}`,
+    );
+    if (!res.ok) return {};
+    const data = await res.json();
+    return (data.segments ?? {}) as Record<string, string | string[]>;
+  } catch {
+    return {};
+  }
+}
+
 function Spinner() {
   return (
     <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -93,6 +114,8 @@ function TextPanel({
   editable = false,
   onChange,
   badge,
+  sefariaRef,
+  sefariaLang,
 }: {
   title: string;
   segments: string[];
@@ -101,6 +124,8 @@ function TextPanel({
   editable?: boolean;
   onChange?: (index: number, value: string) => void;
   badge?: React.ReactNode;
+  sefariaRef?: string;
+  sefariaLang?: string;
 }) {
   const [raw, setRaw] = useState(false);
 
@@ -110,12 +135,17 @@ function TextPanel({
         <h3 className="text-sm font-medium text-zinc-500">
           {title} {badge}
         </h3>
-        <button
-          onClick={() => setRaw((v) => !v)}
-          className="text-xs text-zinc-400 hover:text-zinc-600"
-        >
-          {raw ? "HTML" : "Raw"}
-        </button>
+        <div className="flex items-center gap-3">
+          {sefariaRef && (
+            <SefariaRefLink ref={sefariaRef} lang={sefariaLang} />
+          )}
+          <button
+            onClick={() => setRaw((v) => !v)}
+            className="text-xs text-zinc-400 hover:text-zinc-600"
+          >
+            {raw ? "HTML" : "Raw"}
+          </button>
+        </div>
       </div>
       <div dir={dir} className={`p-4 space-y-3 ${font} text-base leading-relaxed text-zinc-900`}>
         {segments.map((s, i) => {
@@ -216,6 +246,7 @@ export default function Home() {
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [localSavedDraft, setLocalSavedDraft] = useState<string[] | null>(null);
 
   const [showSettings, setShowSettings] = useState(false);
   const { llm, updateLlm } = useLlmConfig();
@@ -298,6 +329,7 @@ export default function Home() {
     setPrevSegments(null);
     setSettingsChanged(false);
     setGapMessage(null);
+    setLocalSavedDraft(null);
   };
 
   const fetchPrevSegments = useCallback(async (prevRef: string) => {
@@ -410,14 +442,26 @@ export default function Home() {
       );
       setHelperLangs(langs);
 
+      const canonicalRef = data.ref ?? parsed.ref;
       setLoaded({
-        parsed: { ...parsed, ref: data.ref ?? parsed.ref },
+        parsed: { ...parsed, ref: canonicalRef },
         versions,
         primary,
         helper,
         allPrimaries: primaries,
         next: data.next ?? undefined,
       });
+
+      const versionSegments = await fetchVersionSegments(
+        parsed.indexTitle,
+        targetLanguage,
+      );
+      const savedSegment = versionSegments[canonicalRef];
+      setLocalSavedDraft(
+        savedSegment ? segmentToDrafts(savedSegment) : null,
+      );
+      setDrafts(null);
+      setSaved(false);
 
       if (data.prev) {
         const prevRef =
@@ -440,10 +484,19 @@ export default function Home() {
     setSaved(false);
   };
 
+  const handleUseSavedDraft = () => {
+    if (!localSavedDraft) return;
+    setDrafts(localSavedDraft);
+    setSaved(true);
+    setLocalSavedDraft(null);
+    setSettingsChanged(false);
+  };
+
   const handleTranslate = async () => {
     if (!loaded) return;
     setDrafting(true);
     setSaved(false);
+    setLocalSavedDraft(null);
     setSettingsChanged(false);
     try {
       const comments = getComments(loaded.primary);
@@ -627,6 +680,14 @@ export default function Home() {
           });
           setDrafts(null);
           setSaved(false);
+          const versionSegments = await fetchVersionSegments(
+            result.parsed.indexTitle,
+            targetLanguage,
+          );
+          const savedSegment = versionSegments[result.parsed.ref];
+          setLocalSavedDraft(
+            savedSegment ? segmentToDrafts(savedSegment) : null,
+          );
           setGapMessage(null);
           return;
         }
@@ -710,6 +771,20 @@ export default function Home() {
       if (items.length === 0) {
         setChapterError("No source Segment found for this Ref.");
       }
+
+      const versionSegments = await fetchVersionSegments(
+        parsed.indexTitle,
+        targetLanguage,
+      );
+      for (const item of items) {
+        if (item.hasTargetTranslation) continue;
+        const savedSegment = versionSegments[item.ref];
+        if (savedSegment) {
+          item.drafts = segmentToDrafts(savedSegment);
+          item.status = "saved";
+        }
+      }
+
       setChapterItems(items);
       setChapterIndexTitle(parsed.indexTitle);
     } catch (err: any) {
@@ -1164,14 +1239,26 @@ export default function Home() {
         {loaded && (
           <div className="mt-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-zinc-800">
-                {loaded.parsed.ref}
-              </h2>
+              <div className="flex min-w-0 items-center gap-2">
+                <h2 className="truncate text-lg font-medium text-zinc-800">
+                  {loaded.parsed.ref}
+                </h2>
+                <SefariaRefLink ref={loaded.parsed.ref} />
+              </div>
               <div className="flex items-center gap-2">
                 {settingsChanged && (
                   <span className="text-xs text-amber-600 font-medium">
                     ● Context changed
                   </span>
+                )}
+                {localSavedDraft && !drafts && (
+                  <button
+                    type="button"
+                    onClick={handleUseSavedDraft}
+                    className="rounded-lg border border-sefaria/30 bg-sefaria-light px-4 py-2 text-sm font-medium text-sefaria hover:bg-sefaria-light/80"
+                  >
+                    Use saved draft
+                  </button>
                 )}
                 <button
                   onClick={handleTranslate}
@@ -1182,6 +1269,10 @@ export default function Home() {
                     <span className="flex items-center gap-2">
                       <Spinner /> Translating…
                     </span>
+                  ) : localSavedDraft && !drafts ? (
+                    "New translation"
+                  ) : drafts ? (
+                    "Re-translate"
                   ) : (
                     "Translate"
                   )}
@@ -1205,6 +1296,13 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            {localSavedDraft && !drafts && (
+              <div className="rounded-lg border border-sefaria/20 bg-sefaria-light/50 px-4 py-3 text-sm text-sefaria">
+                A draft for this Ref is already in your local Version file. Use it to
+                avoid another LLM call, or choose New translation.
+              </div>
+            )}
 
             {loaded.allPrimaries.length > 1 && (
               <details className="rounded-lg border border-zinc-200 bg-white">
@@ -1380,6 +1478,8 @@ export default function Home() {
                 segments={sourceComments}
                 dir="rtl"
                 font="font-serif"
+                sefariaRef={loaded.parsed.ref}
+                sefariaLang={loaded.primary.actualLanguage}
               />
 
               {helperLangs.some((h) => h.enabled) && (
@@ -1388,6 +1488,8 @@ export default function Home() {
                   segments={helperLangs
                     .filter((h) => h.enabled)
                     .flatMap((h) => getComments(h.versions[0]))}
+                  sefariaRef={loaded.parsed.ref}
+                  sefariaLang="en"
                 />
               )}
 
@@ -1397,6 +1499,8 @@ export default function Home() {
                   segments={drafts}
                   editable
                   onChange={updateDraft}
+                  sefariaRef={loaded.parsed.ref}
+                  sefariaLang={targetLanguage}
                 />
               )}
             </div>
@@ -1541,7 +1645,12 @@ export default function Home() {
                 {chapterItems.map((item) => (
                   <div key={item.ref} className="rounded-lg border border-zinc-200 bg-white">
                     <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2">
-                      <h3 className="text-sm font-medium text-zinc-800">{item.ref}</h3>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <h3 className="truncate text-sm font-medium text-zinc-800">
+                          {item.ref}
+                        </h3>
+                        <SefariaRefLink ref={item.ref} />
+                      </div>
                       <div className="flex items-center gap-2">
                         {item.hasTargetTranslation && (
                           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">
@@ -1565,7 +1674,13 @@ export default function Home() {
                               disabled={item.status === "translating"}
                               className="rounded-lg bg-sefaria px-3 py-1.5 text-xs font-medium text-white hover:bg-sefaria-hover disabled:opacity-50"
                             >
-                              {item.status === "translating" ? <Spinner /> : "Translate"}
+                              {item.status === "translating" ? (
+                                <Spinner />
+                              ) : item.drafts ? (
+                                "Re-translate"
+                              ) : (
+                                "Translate"
+                              )}
                             </button>
                             {item.drafts && (
                               <button
@@ -1594,9 +1709,16 @@ export default function Home() {
                         segments={item.comments}
                         dir="rtl"
                         font="font-serif"
+                        sefariaRef={item.ref}
+                        sefariaLang={item.primary.actualLanguage}
                       />
                       {item.helperComments.length > 0 && (
-                        <TextPanel title="Helper (EN)" segments={item.helperComments} />
+                        <TextPanel
+                          title="Helper (EN)"
+                          segments={item.helperComments}
+                          sefariaRef={item.ref}
+                          sefariaLang="en"
+                        />
                       )}
                       {item.drafts && (
                         <TextPanel
@@ -1604,6 +1726,8 @@ export default function Home() {
                           segments={item.drafts}
                           editable
                           onChange={(idx, value) => updateChapterDraft(item.ref, idx, value)}
+                          sefariaRef={item.ref}
+                          sefariaLang={targetLanguage}
                         />
                       )}
                     </div>
@@ -1673,13 +1797,16 @@ export default function Home() {
                       >
                         {expanded ? "▾" : "▸"}
                       </button>
-                      <span className="flex-1 text-sm text-zinc-800">
-                        {node.label}
-                        {count != null && (
-                          <span className="ml-2 text-xs text-zinc-400">
-                            {count} segments
-                          </span>
-                        )}
+                      <span className="flex min-w-0 flex-1 items-center gap-2 text-sm text-zinc-800">
+                        <span className="truncate">
+                          {node.label}
+                          {count != null && (
+                            <span className="ml-2 text-xs text-zinc-400">
+                              {count} segments
+                            </span>
+                          )}
+                        </span>
+                        <SefariaRefLink ref={node.ref} />
                       </span>
                       <button
                         onClick={() => translateSectionFromTree(node.ref)}
@@ -1697,7 +1824,10 @@ export default function Home() {
                               key={ref}
                               className="flex items-center justify-between rounded px-2 py-1 hover:bg-sefaria-light"
                             >
-                              <span className="text-sm text-zinc-600">{ref}</span>
+                              <span className="flex min-w-0 flex-1 items-center gap-2 text-sm text-zinc-600">
+                                <span className="truncate">{ref}</span>
+                                <SefariaRefLink ref={ref} />
+                              </span>
                               <button
                                 onClick={() => translateLeafFromTree(ref)}
                                 className="rounded bg-sefaria px-2 py-1 text-xs font-medium text-white hover:bg-sefaria-hover"

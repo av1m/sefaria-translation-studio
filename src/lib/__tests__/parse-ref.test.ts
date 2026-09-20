@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseRef } from "../parse-ref";
+import { parseRef, refToSefariaUrl } from "../parse-ref";
 
 describe("parseRef", () => {
   it("parses sefaria.org URL with query params (Talmud)", () => {
@@ -86,5 +86,25 @@ describe("parseRef", () => {
       ref: "Berakhot 2a",
       indexTitle: "Berakhot",
     });
+  });
+});
+
+describe("refToSefariaUrl", () => {
+  it("builds segment URLs from canonical refs", () => {
+    expect(refToSefariaUrl("Berakhot 3a:5")).toBe(
+      "https://www.sefaria.org/Berakhot.3a.5",
+    );
+    expect(refToSefariaUrl("Rashi on Genesis 1:1")).toBe(
+      "https://www.sefaria.org/Rashi_on_Genesis.1.1",
+    );
+    expect(refToSefariaUrl("Mishnah Peah 8:1")).toBe(
+      "https://www.sefaria.org/Mishnah_Peah.8.1",
+    );
+  });
+
+  it("adds lang query when provided", () => {
+    expect(refToSefariaUrl("Genesis 1:1", "he")).toBe(
+      "https://www.sefaria.org/Genesis.1.1?lang=he",
+    );
   });
 });

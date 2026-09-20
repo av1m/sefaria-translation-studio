@@ -64,3 +64,18 @@ function isSection(part: string): boolean {
 function extractIndexTitle(ref: string): string {
   return ref.replace(/[\s]+[\d:ab]+$/i, "").replace(/[\s]+[\d:ab]+$/i, "");
 }
+
+const SEFARIA_WEB_BASE = "https://www.sefaria.org";
+
+/** Build a Sefaria.org reader URL from a canonical Ref string. */
+export function refToSefariaUrl(ref: string, lang?: string): string {
+  const { ref: canonicalRef, indexTitle } = parseRef(ref);
+  const sections = canonicalRef.slice(indexTitle.length).trim();
+  const titlePath = indexTitle.replace(/ /g, "_");
+  const path = sections
+    ? `${titlePath}.${sections.replace(/:/g, ".")}`
+    : titlePath;
+  const url = `${SEFARIA_WEB_BASE}/${path}`;
+  if (!lang) return url;
+  return `${url}?lang=${encodeURIComponent(lang)}`;
+}
